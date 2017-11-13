@@ -1,0 +1,108 @@
+---
+title: "Practical Machine Learning - Project"
+author: "Mohammadali Beheshti"
+date: "November 13, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Summary
+In this project we construct a prediction model for the manner in which barbell lift excerise was perfomed by six participants. The manner they perfomed the experiment was reflected in "classe" variable which was the outcome of the model while predictors were a series of observations (features) obtained from accelerometers attached to the arm, forearm and belt. After some exploratory data analysis various techniques were used for feature reduction. Subsequently, two different predictor models (decision tree and random forest) were compared. The accuracy of random forest model was better, therefore it was used to predict the variable "classe"" using provided test data.
+
+#Obtain the data
+The necessary R packages were loaded and test and train data were downloaded and stored:
+```{r, warning=FALSE,message=FALSE}
+library(caret)
+library(dplyr)
+library(rattle)
+rm(list=ls())
+dir<-getSrcDirectory(function(x) {x})
+setwd(dir)
+fileurl1<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileurl1,destfile="dataset_train_8.csv")
+data_train<-read.csv("dataset_train_8.csv")
+fileurl2<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileurl2,destfile="dataset_test_8.csv")
+data_test<-read.csv("dataset_test_8.csv")
+```
+#Exploratory data analysis
+A simple exploratory analysis of training data was carried on. The structure of the training data and the levels of outcome variable "classe" were investigated:
+```{r}
+str(data_train)
+table(data_train$classe)
+```
+it could be seen that there were 160 features in the data and there were 19622 observations. Furthermore it could be observed that the data had "NA" entries, one could also observe that the "classe" variable could take five different levels "A" to "E".
+
+#Feature reduction and data partitioning
+Four different approaches were used to reduce the number of features in the train data set used for the prediction: first the features for which more than half of the entries were missing were excluded. All these approaches were also applied to the test data.
+```{r}
+na_indices<-which(colSums(is.na(data_train))>=10000)
+data_train=data_train[,-na_indices]
+data_test=data_test[,-na_indices]
+table(is.na(data_train))
+```
+It could be seen that this approach removed all NA entries and there was no need for imputation. In the second feature reduction approach the features that were irrelevant to the prediction like time stamps, indices and participant's names were excluded:
+```{r}
+data_train=data_train[,-c(1:5)]#contain name, index, and time stamp
+data_test=data_test[,-c(1:5)]
+```
+In the third approach the features with near zero variance were removed as these features were not expected to contribute much to the predicted outcome:
+```{r}
+nzv_index<-nearZeroVar(data_train)
+data_train<-data_train[,-nzv_index]
+data_test<-data_test[,-nzv_index]
+```
+The train data was then partitioned to training and validation data so that one could compare the performance of fitted models on the train data before applying the more accurate model to the test data.
+```{r}
+set.seed(111)
+inTrain<-createDataPartition(y=data_train$classe,p=0.7,list=FALSE)
+train_set<-data_train[inTrain,]
+valid_set<-data_train[-inTrain,]
+```
+Subsequently the forth feature reduction approach was conducted: The PCA analysis was performed on the remaing features to identify the ones that capture 90% of variations. The cumulative effect of all these four feature reduction approaches was a reduction of number of predictors (features) from 160 to 21.
+```{r}
+a<-which(names(data_train)=='classe')
+pca_preproc<-preProcess(train_set[,-a],method="pca",thres=.9)
+train_pc<-predict(pca_preproc,train_set[,-a])#have to do the same to test and validate
+valid_pc<-predict(pca_preproc,valid_set[,-a])
+test_pc<-predict(pca_preproc,data_test[,-a])
+```
+#Fitting models
+Two different prediction models were chosen, a decision tree model and a random forest model for the sake of comparison. The random forest model was chosen as it is one of the top choices for machine learning applications due to its high accuracy. For both models a 10 fold crossvalidation was also performed:
+```{r,warning=FALSE,message=FALSE}
+train_control<-trainControl('cv',10)
+system.time(tree_model<-train(y=train_set$classe,x=train_pc,trControl=train_control,method="rpart"))
+system.time(rf_model<-train(y=train_set$classe,x=train_pc,trControl=train_control,method="rf"))
+```
+The tree fitted by decision tree model is shown below:
+```{r}
+fancyRpartPlot(tree_model$finalModel,sub=" ")
+```
+
+Using confusion matrix the accuracy of this decision tree model was investigated using the validation data set:
+```{r}
+predict_tree<-predict(tree_model,newdata=valid_pc)
+cf_rpart<-confusionMatrix(predict_tree,valid_set$classe)
+acc_rpart<-cf_rpart$overall['Accuracy']
+cf_rpart
+```
+which provided the accuracy of `r acc_rpart`.
+Using confusion matrix the accuracy of random forest model was also investigated using the validation data set:
+```{r}
+predict_rf<-predict(rf_model,newdata=valid_pc)
+cf_rf<-confusionMatrix(predict_rf,valid_set$classe)
+cf_rf
+cf_rf_acc<-cf_rf$overall['Accuracy']
+```
+which provided the accuracy of `r cf_rf_acc`. It can be seen that as expected the accuracy of random forest model is much higher therefore we use this model to predict the oucome from the provided test data.
+
+#Predict the outcomes for the test data
+The random forest model was used to predict the outcomes for the test data. The predicted outcomes were written to a text file:
+```{r}
+predict_test<-predict(rf_model,newdata=test_pc)
+out<-data.frame(test=1:20,prediction=predict_test)
+write.table(out,"output.txt",sep="\t",row.names=FALSE) 
+```
