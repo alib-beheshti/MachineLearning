@@ -2,7 +2,7 @@
 title: "Practical Machine Learning - Project"
 author: "Mohammadali Beheshti"
 date: "November 13, 2017"
-output: html_document
+output: md_document
 ---
 
 ```{r setup, include=FALSE}
